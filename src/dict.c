@@ -59,6 +59,11 @@
  * Note that even when dict_can_resize is set to 0, not all resizes are
  * prevented: a hash table is still allowed to grow if the ratio between
  * the number of elements and the buckets > dict_force_resize_ratio. */
+/* 通过dictEnableResize() / dictDisableResize()改变dict_can_resize来决定是否能执行rehash，
+ * 这对于redis来说十分重要，因为redis使用copy-on-write做写时复制，并不希望在同一时刻进行太多的内存修改。
+ * 当dict_can_resize为1时，并非完全不能进行rehahs，如果字典的负载因子dict_force_resize_ratio大于5，
+ * 仍然可以进行rehash
+*/
 static int dict_can_resize = 1;
 static unsigned int dict_force_resize_ratio = 5;
 
@@ -99,34 +104,36 @@ uint64_t dictGenCaseHashFunction(const unsigned char *buf, int len) {
 
 /* Reset a hash table already initialized with ht_init().
  * NOTE: This function should only be called by ht_destroy(). */
+/* 重新设定一个哈希表
+ * 这个函数只能被ht_destroy()调用 */
 static void _dictReset(dictht *ht)
 {
-    ht->table = NULL;
-    ht->size = 0;
-    ht->sizemask = 0;
-    ht->used = 0;
+    ht->table = NULL; // 设置哈希表哈希桶数组为空
+    ht->size = 0;  // 设置哈希表哈希桶个数为0
+    ht->sizemask = 0; // 设置哈希表掩码为0
+    ht->used = 0; // 设置哈希表已存在的节点个数为0
 }
 
 /* Create a new hash table */
 dict *dictCreate(dictType *type,
         void *privDataPtr)
 {
-    dict *d = zmalloc(sizeof(*d));
+    dict *d = zmalloc(sizeof(*d)); // 为新字典分配空间
 
     _dictInit(d,type,privDataPtr);
     return d;
 }
 
-/* Initialize the hash table */
+/* 将传入进来的字典进行初始化 */
 int _dictInit(dict *d, dictType *type,
         void *privDataPtr)
 {
-    _dictReset(&d->ht[0]);
-    _dictReset(&d->ht[1]);
-    d->type = type;
-    d->privdata = privDataPtr;
-    d->rehashidx = -1;
-    d->iterators = 0;
+    _dictReset(&d->ht[0]);// 初始化哈希表0
+    _dictReset(&d->ht[1]);// 初始化哈希表1
+    d->type = type;   // 初始化字典的功能函数
+    d->privdata = privDataPtr;// 赋予字典私有数据
+    d->rehashidx = -1; // rehash设置为-1
+    d->iterators = 0; // 迭代器个数置为0
     return DICT_OK;
 }
 
@@ -136,10 +143,10 @@ int dictResize(dict *d)
 {
     unsigned long minimal;
 
-    if (!dict_can_resize || dictIsRehashing(d)) return DICT_ERR;
-    minimal = d->ht[0].used;
+    if (!dict_can_resize || dictIsRehashing(d)) return DICT_ERR;// 如果禁止rehash或者已经在rehash，则返回0
+    minimal = d->ht[0].used; // 获取哈希表0已经有的节点个数
     if (minimal < DICT_HT_INITIAL_SIZE)
-        minimal = DICT_HT_INITIAL_SIZE;
+        minimal = DICT_HT_INITIAL_SIZE; // 最小的字典元素
     return dictExpand(d, minimal);
 }
 
