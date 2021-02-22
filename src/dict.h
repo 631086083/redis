@@ -71,7 +71,7 @@ typedef struct dictType {
 // 哈希表的结构体的实现
 typedef struct dictht {
     dictEntry **table; // 哈希表的节点指针，本质是上一个数组，数组中的每个槽位都是指向一个哈希节点的指针
-    unsigned long size; //哈希表桶的大小
+    unsigned long size; //哈希表桶的大小（数组的长度）
     unsigned long sizemask; //哈希表的掩码
     unsigned long used;  //哈希表所含有的节点个数
 } dictht;

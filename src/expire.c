@@ -437,21 +437,22 @@ void rememberSlaveKeyWithExpire(redisDb *db, robj *key) {
         };
         slaveKeysWithExpire = dictCreate(&dt,NULL);
     }
-    if (db->id > 63) return;
+    if (db->id > 63) return; // 最多只支持0--63号slave库进行slave可写操作
 
-    dictEntry *de = dictAddOrFind(slaveKeysWithExpire,key->ptr);
+    dictEntry *de = dictAddOrFind(slaveKeysWithExpire,key->ptr); // 根据值（key->ptr）获取de（新建或已存在）
     /* If the entry was just created, set it to a copy of the SDS string
      * representing the key: we don't want to need to take those keys
      * in sync with the main DB. The keys will be removed by expireSlaveKeys()
      * as it scans to find keys to remove. */
     if (de->key == key->ptr) {
+        // 如果是第一次创建或者已经存在该节点
         de->key = sdsdup(key->ptr);
-        dictSetUnsignedIntegerVal(de,0);
+        dictSetUnsignedIntegerVal(de,0); // 内联式设置value为0，直接设置共用体的值即可
     }
 
-    uint64_t dbids = dictGetUnsignedIntegerVal(de);
-    dbids |= (uint64_t)1 << db->id;
-    dictSetUnsignedIntegerVal(de,dbids);
+    uint64_t dbids = dictGetUnsignedIntegerVal(de); // 获取该key存在的dbid
+    dbids |= (uint64_t)1 << db->id; // 保存该key所在的dbidx
+    dictSetUnsignedIntegerVal(de,dbids); // 设置过期key所在的dbidx
 }
 
 /* Return the number of keys we are tracking. */
