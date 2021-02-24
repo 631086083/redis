@@ -484,20 +484,20 @@ dictEntry *dictFind(dict *d, const void *key)
     dictEntry *he;
     uint64_t h, idx, table;
 
-    if (dictSize(d) == 0) return NULL; /* dict is empty */
-    if (dictIsRehashing(d)) _dictRehashStep(d);
-    h = dictHashKey(d, key);
+    if (dictSize(d) == 0) return NULL; /* 字典为空，则返回 */
+    if (dictIsRehashing(d)) _dictRehashStep(d); /* 如果进行rehash，则进行单步rehash */
+    h = dictHashKey(d, key); /* 对key进行hash函数 */
     for (table = 0; table <= 1; table++) {
-        idx = h & d->ht[table].sizemask;
-        he = d->ht[table].table[idx];
+        idx = h & d->ht[table].sizemask; /* 获取掩码 */
+        he = d->ht[table].table[idx]; /* 获取哈希桶链表的首个节点*/
         while(he) {
             if (key==he->key || dictCompareKeys(d, key, he->key))
-                return he;
+                return he; // 找到节点则进行遍历
             he = he->next;
         }
-        if (!dictIsRehashing(d)) return NULL;
+        if (!dictIsRehashing(d)) return NULL; // 如果没有在进行rehash，则返回NULL
     }
-    return NULL;
+    return NULL; // 找不到返回NULL
 }
 
 void *dictFetchValue(dict *d, const void *key) {

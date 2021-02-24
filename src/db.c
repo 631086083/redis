@@ -1325,16 +1325,16 @@ long long getExpire(redisDb *db, robj *key) {
 void propagateExpire(redisDb *db, robj *key, int lazy) {
     robj *argv[2];
 
-    argv[0] = lazy ? shared.unlink : shared.del;
+    argv[0] = lazy ? shared.unlink : shared.del; // 决定是否使用异步删除
     argv[1] = key;
-    incrRefCount(argv[0]);
+    incrRefCount(argv[0]); // 增加引用计数
     incrRefCount(argv[1]);
 
     if (server.aof_state != AOF_OFF)
-        feedAppendOnlyFile(server.delCommand,db->id,argv,2);
-    replicationFeedSlaves(server.slaves,db->id,argv,2);
+        feedAppendOnlyFile(server.delCommand,db->id,argv,2); // 如果开启了aof，则增加一条del记录
+    replicationFeedSlaves(server.slaves,db->id,argv,2); // 传播到slave
 
-    decrRefCount(argv[0]);
+    decrRefCount(argv[0]); // 减少引用计数
     decrRefCount(argv[1]);
 }
 

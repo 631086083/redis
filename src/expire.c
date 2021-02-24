@@ -52,24 +52,24 @@
  * The parameter 'now' is the current time in milliseconds as is passed
  * to the function to avoid too many gettimeofday() syscalls. */
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
-    long long t = dictGetSignedIntegerVal(de);
+    long long t = dictGetSignedIntegerVal(de); // 获取该节点的过期时间
     if (now > t) {
-        sds key = dictGetKey(de);
-        robj *keyobj = createStringObject(key,sdslen(key));
+        sds key = dictGetKey(de); // 获取key
+        robj *keyobj = createStringObject(key,sdslen(key)); // 创建一个新的robj用于传播
 
-        propagateExpire(db,keyobj,server.lazyfree_lazy_expire);
+        propagateExpire(db,keyobj,server.lazyfree_lazy_expire);// 将过期传播到aof和slave
         if (server.lazyfree_lazy_expire)
-            dbAsyncDelete(db,keyobj);
+            dbAsyncDelete(db,keyobj);  // 开启了lazyfree，异步删除
         else
-            dbSyncDelete(db,keyobj);
+            dbSyncDelete(db,keyobj); // 同步删除
         notifyKeyspaceEvent(NOTIFY_EXPIRED,
-            "expired",keyobj,db->id);
+            "expired",keyobj,db->id); // 通知keyspace过期事件变更
         signalModifiedKey(NULL, db, keyobj);
-        decrRefCount(keyobj);
-        server.stat_expiredkeys++;
-        return 1;
+        decrRefCount(keyobj); // 减少引用计数，一般情况下，此对象引用计数为1，减少后直接删除
+        server.stat_expiredkeys++; // 过期key++
+        return 1; // 已经过期，返回1
     } else {
-        return 0;
+        return 0; // 没有过期，返回0
     }
 }
 
@@ -211,19 +211,20 @@ void activeExpireCycle(int type) {
             unsigned long num, slots;
             long long now, ttl_sum;
             int ttl_samples;
-            iteration++;
+            iteration++; // 迭代桶的轮数自增
 
-            /* If there is nothing to expire try next DB ASAP. */
+            /* 如果当前数据的过期字典为空，则进行下一个数据库的处理 */
             if ((num = dictSize(db->expires)) == 0) {
-                db->avg_ttl = 0;
+                db->avg_ttl = 0; // 因为不存在过期key，所以平均过期时间为0
                 break;
             }
-            slots = dictSlots(db->expires);
+            slots = dictSlots(db->expires); // 获取当前过期字典的槽位（ht0+ht1）
             now = mstime();
 
             /* When there are less than 1% filled slots, sampling the key
              * space is expensive, so stop here waiting for better times...
              * The dictionary will be resized asap. */
+            /* 如果带有过期时间的key个数小于1，在这里面抽样%*/
             if (num && slots > DICT_HT_INITIAL_SIZE &&
                 (num*100/slots < 1)) break;
 
@@ -235,7 +236,7 @@ void activeExpireCycle(int type) {
             ttl_samples = 0;
 
             if (num > config_keys_per_loop)
-                num = config_keys_per_loop;
+                num = config_keys_per_loop; // 每次至多只会选择config_keys_per_loop个key进行查询
 
             /* Here we access the low level representation of the hash table
              * for speed concerns: this makes this code coupled with dict.c,
@@ -247,16 +248,16 @@ void activeExpireCycle(int type) {
              * is very fast: we are in the cache line scanning a sequential
              * array of NULL pointers, so we can scan a lot more buckets
              * than keys in the same time. */
-            long max_buckets = num*20;
+            long max_buckets = num*20; // 最多查询的哈希桶的个数为过期key的个数*20
             long checked_buckets = 0;
 
             while (sampled < num && checked_buckets < max_buckets) {
                 for (int table = 0; table < 2; table++) {
-                    if (table == 1 && !dictIsRehashing(db->expires)) break;
+                    if (table == 1 && !dictIsRehashing(db->expires)) break; // 如果没有进行rehash，那么ht1不扫描
 
-                    unsigned long idx = db->expires_cursor;
-                    idx &= db->expires->ht[table].sizemask;
-                    dictEntry *de = db->expires->ht[table].table[idx];
+                    unsigned long idx = db->expires_cursor; // 获取该字典的主动淘汰循环过期游标
+                    idx &= db->expires->ht[table].sizemask; // 通过游标获取到哈希桶的idx
+                    dictEntry *de = db->expires->ht[table].table[idx]; // 获取哈希桶的链表的第一个节点
                     long long ttl;
 
                     /* Scan the current bucket of the current table. */
@@ -267,53 +268,54 @@ void activeExpireCycle(int type) {
                         dictEntry *e = de;
                         de = de->next;
 
-                        ttl = dictGetSignedIntegerVal(e)-now;
-                        if (activeExpireCycleTryExpire(db,e,now)) expired++;
+                        ttl = dictGetSignedIntegerVal(e)-now; // 获取过期时间
+                        if (activeExpireCycleTryExpire(db,e,now)) expired++; //如果过期了，过期计数自加
                         if (ttl > 0) {
                             /* We want the average TTL of keys yet
                              * not expired. */
-                            ttl_sum += ttl;
-                            ttl_samples++;
+                            ttl_sum += ttl; // 总过期时间自加
+                            ttl_samples++; // ttl抽样个数自加
                         }
                         sampled++;
                     }
                 }
-                db->expires_cursor++;
+                db->expires_cursor++; // 该slot遍历之后，主动淘汰循环过期游标自加
             }
-            total_expired += expired;
-            total_sampled += sampled;
+            total_expired += expired; // 总过期key数量增加
+            total_sampled += sampled; // 总抽样key数量增加
 
             /* Update the average TTL stats for this database. */
             if (ttl_samples) {
-                long long avg_ttl = ttl_sum/ttl_samples;
+                long long avg_ttl = ttl_sum/ttl_samples; // 获取这一次计算的平均过期时间
 
                 /* Do a simple running average with a few samples.
                  * We just use the current estimate with a weight of 2%
                  * and the previous estimate with a weight of 98%. */
-                if (db->avg_ttl == 0) db->avg_ttl = avg_ttl;
-                db->avg_ttl = (db->avg_ttl/50)*49 + (avg_ttl/50);
+                if (db->avg_ttl == 0) db->avg_ttl = avg_ttl; // 如果之前平均过期时间为0，以现在的平局ttl为准
+                db->avg_ttl = (db->avg_ttl/50)*49 + (avg_ttl/50); // 上一次计算的平均ttl和当前计算的平均ttl按照49：1的比例计算
             }
 
             /* We can't block forever here even if there are many keys to
              * expire. So after a given amount of milliseconds return to the
              * caller waiting for the other active expire cycle. */
             if ((iteration & 0xf) == 0) { /* check once every 16 iterations. */
-                elapsed = ustime()-start;
-                if (elapsed > timelimit) {
-                    timelimit_exit = 1;
-                    server.stat_expired_time_cap_reached_count++;
+                elapsed = ustime()-start; // 获取当前函数运行的时间
+                if (elapsed > timelimit) { // 如果超过时间限制
+                    timelimit_exit = 1;  // 时间限制标志位设为1
+                    server.stat_expired_time_cap_reached_count++; // 达到淘汰时间限制的循环次数++
                     break;
                 }
             }
             /* We don't repeat the cycle for the current database if there are
              * an acceptable amount of stale keys (logically expired but yet
              * not reclaimed). */
+            /* 如果没有抽样或者抽样过期的key比例小于阈值，不要再在该db上重复抽样 */
         } while (sampled == 0 ||
                  (expired*100/sampled) > config_cycle_acceptable_stale);
     }
 
-    elapsed = ustime()-start;
-    server.stat_expire_cycle_time_used += elapsed;
+    elapsed = ustime()-start; // 获取运行的时间
+    server.stat_expire_cycle_time_used += elapsed; // 获取系统用于主动淘汰的时间
     latencyAddSampleIfNeeded("expire-cycle",elapsed/1000);
 
     /* Update our estimate of keys existing but yet to be expired.

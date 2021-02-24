@@ -2964,16 +2964,16 @@ int clientsArePaused(void) {
 
         server.clients_paused = 0;
 
-        /* Put all the clients in the unblocked clients queue in order to
-         * force the re-processing of the input buffer if any. */
+        /* 将所有的客户端放入非阻塞队列，重新处理input buffer */
         listRewind(server.clients,&li);
         while ((ln = listNext(&li)) != NULL) {
             c = listNodeValue(ln);
 
             /* Don't touch slaves and blocked clients.
              * The latter pending requests will be processed when unblocked. */
+            //
             if (c->flags & (CLIENT_SLAVE|CLIENT_BLOCKED)) continue;
-            queueClientForReprocessing(c);
+            queueClientForReprocessing(c);  // 放入非阻塞队列
         }
     }
     return server.clients_paused;
