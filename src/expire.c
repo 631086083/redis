@@ -126,23 +126,27 @@ void activeExpireCycle(int type) {
      * is 10. */
     unsigned long
     effort = server.active_expire_effort-1, /* Rescale from 0 to 9. */
+    // 每次循环遍历的key
     config_keys_per_loop = ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP +
                            ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP/4*effort,
+    // 持续的时间限制
     config_cycle_fast_duration = ACTIVE_EXPIRE_CYCLE_FAST_DURATION +
                                  ACTIVE_EXPIRE_CYCLE_FAST_DURATION/4*effort,
+    //
     config_cycle_slow_time_perc = ACTIVE_EXPIRE_CYCLE_SLOW_TIME_PERC +
                                   2*effort,
+     //
     config_cycle_acceptable_stale = ACTIVE_EXPIRE_CYCLE_ACCEPTABLE_STALE-
                                     effort;
 
     /* This function has some global state in order to continue the work
      * incrementally across calls. */
-    static unsigned int current_db = 0; /* Last DB tested. */
-    static int timelimit_exit = 0;      /* Time limit hit in previous call? */
-    static long long last_fast_cycle = 0; /* When last fast cycle ran. */
+    static unsigned int current_db = 0; /* 当前扫描的db */
+    static int timelimit_exit = 0;      /* 标志位是否触发了时间限制 */
+    static long long last_fast_cycle = 0; /* 上一次快速淘汰的时间. */
 
     int j, iteration = 0;
-    int dbs_per_call = CRON_DBS_PER_CALL;
+    int dbs_per_call = CRON_DBS_PER_CALL;  // 每次扫描的db数量
     long long start = ustime(), timelimit, elapsed;
 
     /* When clients are paused the dataset should be static not just from the
@@ -155,14 +159,15 @@ void activeExpireCycle(int type) {
          * for time limit, unless the percentage of estimated stale keys is
          * too high. Also never repeat a fast cycle for the same period
          * as the fast cycle total duration itself. */
+        // 如果上一次淘汰不是因为时间限制而退出且当前过期key的比例小于阈值，直接返回
         if (!timelimit_exit &&
             server.stat_expired_stale_perc < config_cycle_acceptable_stale)
             return;
-
+        // 如果距离上一次快速主动淘汰时间小于阈值，不能开启这一次的快速主动淘汰，直接返回
         if (start < last_fast_cycle + (long long)config_cycle_fast_duration*2)
             return;
 
-        last_fast_cycle = start;
+        last_fast_cycle = start; // 记录下当前轮次开始的时间
     }
 
     /* We usually should test CRON_DBS_PER_CALL per iteration, with
@@ -172,6 +177,7 @@ void activeExpireCycle(int type) {
      * 2) If last time we hit the time limit, we want to scan all DBs
      * in this iteration, as there is work to do in some DB and we don't want
      * expired keys to use memory for too much time. */
+    // 如果没轮遍历的数据库数量大于系统配置的，或者上一轮淘汰达到了时间限制而退出，那么本轮需要遍历所有的库
     if (dbs_per_call > server.dbnum || timelimit_exit)
         dbs_per_call = server.dbnum;
 
@@ -179,7 +185,7 @@ void activeExpireCycle(int type) {
      * time per iteration. Since this function gets called with a frequency of
      * server.hz times per second, the following is the max amount of
      * microseconds we can spend in this function. */
-    timelimit = config_cycle_slow_time_perc*1000000/server.hz/100;
+    timelimit = config_cycle_slow_time_perc*1000000/server.hz/100; // 设置一个
     timelimit_exit = 0;
     if (timelimit <= 0) timelimit = 1;
 
@@ -316,7 +322,7 @@ void activeExpireCycle(int type) {
 
     elapsed = ustime()-start; // 获取运行的时间
     server.stat_expire_cycle_time_used += elapsed; // 获取系统用于主动淘汰的时间
-    latencyAddSampleIfNeeded("expire-cycle",elapsed/1000);
+    latencyAddSampleIfNeeded("expire-cycle",elapsed/1000);// 如果超过了慢查询规定的时间加入到事件中
 
     /* Update our estimate of keys existing but yet to be expired.
      * Running average with this sample accounting for 5%. */
@@ -325,6 +331,7 @@ void activeExpireCycle(int type) {
         current_perc = (double)total_expired/total_sampled;
     } else
         current_perc = 0;
+    // 以5%的比例更新过期key的比例
     server.stat_expired_stale_perc = (current_perc*0.05)+
                                      (server.stat_expired_stale_perc*0.95);
 }

@@ -454,29 +454,29 @@ int _dictClear(dict *d, dictht *ht, void(callback)(void *)) {
 
         if (callback && (i & 65535) == 0) callback(d->privdata);
 
-        if ((he = ht->table[i]) == NULL) continue;
+        if ((he = ht->table[i]) == NULL) continue; // 如果hash桶没有节点挂在
         while(he) {
-            nextHe = he->next;
-            dictFreeKey(d, he);
-            dictFreeVal(d, he);
-            zfree(he);
-            ht->used--;
-            he = nextHe;
+            nextHe = he->next; // 获取下一个hash节点
+            dictFreeKey(d, he); // 释放key对象
+            dictFreeVal(d, he); // 释放value对象
+            zfree(he); // 释放hash entry
+            ht->used--; // dict使用的节点自减
+            he = nextHe; // 给下一个节点赋给遍历指针
         }
     }
     /* Free the table and the allocated cache structure */
-    zfree(ht->table);
+    zfree(ht->table); // 当整个ht删除完毕后，释放哈希表
     /* Re-initialize the table */
-    _dictReset(ht);
+    _dictReset(ht);  // 重制hashtable到初始化状态
     return DICT_OK; /* never fails */
 }
 
 /* Clear & Release the hash table */
 void dictRelease(dict *d)
 {
-    _dictClear(d,&d->ht[0],NULL);
-    _dictClear(d,&d->ht[1],NULL);
-    zfree(d);
+    _dictClear(d,&d->ht[0],NULL); // 重置ht0
+    _dictClear(d,&d->ht[1],NULL); // 重置ht1
+    zfree(d); // 释放dict的全部空间
 }
 
 dictEntry *dictFind(dict *d, const void *key)
@@ -503,8 +503,8 @@ dictEntry *dictFind(dict *d, const void *key)
 void *dictFetchValue(dict *d, const void *key) {
     dictEntry *he;
 
-    he = dictFind(d,key);
-    return he ? dictGetVal(he) : NULL;
+    he = dictFind(d,key); // 获取key对应的hash entry
+    return he ? dictGetVal(he) : NULL; // 根据key是否存在，选择返回val或者NULL
 }
 
 /* A fingerprint is a 64 bit number that represents the state of the dictionary
@@ -513,6 +513,7 @@ void *dictFetchValue(dict *d, const void *key) {
  * the fingerprint again when the iterator is released.
  * If the two fingerprints are different it means that the user of the iterator
  * performed forbidden operations against the dictionary while iterating. */
+/* 使用hash算法获取dict的指纹 */
 long long dictFingerprint(dict *d) {
     long long integers[6], hash = 0;
     int j;
